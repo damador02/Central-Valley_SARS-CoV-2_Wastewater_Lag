@@ -1,0 +1,621 @@
+---
+title: "0325_wavelet_analysis"
+author: "De'Liz Amador"
+date: "2025-03-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Wavelet Analysis for Quantifying Time Lag
+```{r}
+library(WaveletComp)
+library(dplyr)
+library(zoo)
+library(ggplot2)
+library(tidyverse)
+library(forecast)
+library(tidyr)
+library(pracma)
+
+source("data_creation_peak_analysis.R") # This read all the variables defined
+
+
+trim_fun = function(x){
+  x = x[!is.na(x)]   # remove NA
+  if(length(x) <= 2){
+    return(NA)
+  }else{
+      x1 = sort(x)
+      x1 = x1[2:(length(x1)-1)] # Remove max values and min values
+      return(mean(x1))
+  }
+}
+```
+
+```{r}
+save_path <- "../output/"
+
+#using 10 day moving average data
+data_all <- data_all %>% 
+  group_by(Plant) %>% 
+  mutate(SC2_N_out = tsclean(Gene_10, replace.missing=F), 
+         SC2_N_av10 = rollapply(SC2_N_out,width=10, mean, align="center",fill=NA, na.rm=T))
+
+#For removing rows where yhat = NA
+data_all <- data_all %>%
+ filter(!is.na(yhat))
+  
+data_all <- data_all %>%  group_by(Plant) %>% 
+  mutate(yhat =coredata( na.approx(yhat))) # replace NA values with interpolated values.
+
+```
+
+```{r}
+#plotting averaged data
+ggplot(data_all, aes(x = Date, y = yhat, color = Plant)) + geom_line() + 
+  labs(x = "Date", y = "SC2_Norm", title = "SC2_Norm by City")
+
+```
+
+Rearranging data so that plants have there own column
+```{r}
+data_all <- data_all[, c("Date", "Plant", "yhat")]
+
+new_data_all <- data_all %>% 
+  pivot_wider(names_from = Plant, values_from = "yhat") %>%
+  na.omit() #removing rows with NAs just in case -- Wavelet doesn't run if NAs present
+
+days <- seq(from = as.Date( min(new_data_all$Date)), 
+            to = as.Date( max(new_data_all$Date)), by = "day")
+
+colnames(new_data_all)[1] <- "date"
+
+new_data_all
+
+```
+
+
+```{r}
+plot_sel_plant = function(Plant1, Plant2){
+  filtered_data_all <- data_all[data_all$Plant %in% c(Plant1, Plant2), ]
+  ggplot(filtered_data_all, aes(x = Date, y = yhat, color = Plant)) +
+  geom_line() +
+  labs(x = "Date", y = "SC2_N_av10", title = "SC2_N_av10 by City")}
+
+```
+
+Filtering before Breaks in Phase Difference graph - Merced vs Sunnyvale & Oceanside
+```{r}
+##only run if there's a period but time lag Results in NA
+new_data_all <- new_data_all %>%
+  #select date before break in graph
+  
+  filter(date < as.Date("2022-03-19")) %>% #sunnyvale
+  #filter(date <= as.Date("2022-03-13")) %>% #oceanside b1
+  #filter(date >= as.Date("2022-08-25") & date <= as.Date("2023-04-12")) %>% #oceanside b2
+  #filter(date >= as.Date("2023-09-04")) %>% #oceanside b3
+  
+  select(date, Modesto, 'San Jose') #Sunnyvale
+
+new_data_all
+##rerun all wavelet analysis again to quantify time lag for period
+
+```
+
+```{r}
+city= 'Modesto'
+my.w <- analyze.wavelet(new_data_all, city, loess.span = 0,  dt = 1, dj = 1/250,  lowerPeriod = 16, upperPeriod = 256,
+                        make.pval = TRUE, n.sim = 10   )
+
+
+wt.image(my.w, color.key = "quantile", n.levels = 250,  legend.params = list(lab = "wavelet power levels"),
+         periodlab = "periods (days)", show.date = TRUE, date.format = "%Y-%m-%d", timelab = "", main= city)
+
+# 1/250: In this case we are analyzing the periods from 2^4 to 2 ^7(i.e., from 16 to 128). Each octave ([16, 32], [32, 64], [64, 128]) is divided into 250 suboctaves.With dj = 1/250, there will be 250 suboctaves per octave. This results in very fine spacing between each period value.
+
+plot(new_data_all$`Modesto`)
+my.rec <- reconstruct(my.w)
+```
+
+
+```{r}
+city= 'Modesto'
+my.wx <- analyze.wavelet(new_data_all, city_name[1], loess.span = 0, dt = 1, dj = 1/250,
+                         lowerPeriod = 16, upperPeriod = 256, make.pval = TRUE, n.sim = 10)
+
+# Adjust the plot margins to make space for the legend
+par(mar = c(5, 4, 4, 8) + 0.1)
+
+# Plot the average wavelet power
+plot(my.wx$Period, my.wx$Power.avg, type = "l", col = "blue", xlab = "Period", ylab = "Wavelet Power",
+     main = "Wavelet Power Averaged over Scales", lwd = 2)
+
+# Add p-value points
+significant <- my.wx$Power.avg.pval < 0.05
+points(my.wx$Period[significant], my.wx$Power.avg[significant], col = "green", pch = 19, cex=0.05) #green - p-value < 0.05 = significant periodicity at those periods
+points(my.wx$Period[!significant], my.wx$Power.avg[!significant], col = "red", pch = 19, cex=0.05) #red - p-value > 0.05 = no significant periodicity at those periods
+
+print(paste('p-values:', my.wx$Power.avg.pval))
+
+
+```
+
+Calculating Averaged Power Over All Power
+```{r, fig.width=10, fig.height=4}
+
+#specifying where to export tiff file -- HARDCODED
+folder_path <- "C:/Users/teehe/Downloads/WW_data_points/Modesto/oceanside"
+#folder_path <- "C:/Users/teehe/Downloads/WW_data_points/Modesto/oceanside/b3"
+file_name <- str_c(city_name[2], "_poweraveraged.tif")
+file_path <- file.path(folder_path, file_name)
+
+plot_periods <- function() {
+  colors <- c("blue", "red") #, "green", "orange", "purple", "brown", "black", "magenta", "cyan", "yellow", "gray", "pink")
+  
+  my.wx <- analyze.wavelet(new_data_all, city_name[1], loess.span = 0, dt = 1, dj = 1/250,
+                           lowerPeriod = 16, upperPeriod = 256,make.pval = TRUE, n.sim = 10) 
+  
+  # Adjust the plot margins to make space for the legend
+  par(mar = c(5, 4, 4, 8) + 0.1)
+  
+  #EXPORTING plot as tiff file --> required format for journals
+  tiff(filename = file_path,
+         #str_c(city_name[2], "_poweraveraged.tif"),
+       width = 11, height = 9.7,units = "cm", res = 600)
+  
+  plot(my.wx$Period, my.wx$Power.avg, type = "l", col = "blue", xlab = "Period", ylab = "Wavelet Power",
+       main = "Wavelet Power Averaged over Scales", lwd = 2)
+  
+  for (i in 2:length(city_name)){
+    my.wy <- analyze.wavelet(new_data_all, city_name[i], loess.span = 0, dt = 1, dj = 1/250, lowerPeriod = 16, upperPeriod = 256,
+                             make.pval = TRUE, n.sim = 10)
+    lines(my.wy$Period, my.wy$Power.avg, col = colors[i], lwd = 2)
+  }
+  
+  # Add the legend outside the plot area
+  par(xpd=TRUE)
+  legend("topleft", inset = c(0.0, 0), legend = city_name[1:length(city_name)], 
+         lty = 1, lwd = 2, col = colors[1:length(city_name)], cex = 0.7)
+  
+  dev.off() #closes graph exportation
+  
+}
+
+plot_periods()
+##plot appears in folder...don't really know how to make it reappear here lol
+
+```
+Checking significance of periodicity 
+
+significant periodicities are present after the initial periods, while at the beginning, the p-values are generally greater than 0.05, indicating a lack of significant periodicity at the start.
+```{r}
+
+#specifying where to export tiff file
+folder_path <- "C:/Users/teehe/Downloads/WW_data_points/Modesto/oceanside"
+#folder_path <- "C:/Users/teehe/Downloads/WW_data_points/Modesto/oceanside/b3"
+file_name_pa <- str_c(city_name[2], "_pval_poweraveraged.tif")
+file_path_pa <- file.path(folder_path, file_name_pa)
+
+plot_periods_pvalue <- function() {
+  colors <- c("blue", "red")
+  
+  my.wx <- analyze.wavelet(new_data_all, city_name[1], loess.span = 0, dt = 1, dj = 1/250,
+                           lowerPeriod = 16, upperPeriod = 256, make.pval = TRUE, n.sim = 10)
+  
+  # Adjust the plot margins to make space for the legend
+  par(mar = c(5, 4, 4, 8) + 0.1)
+  
+  #exporting plot as tiff file
+  tiff(filename = file_path_pa, width = 11, height = 9.7, units = "cm", res = 600)
+  
+  # Plot the average wavelet power
+  plot(my.wx$Period, my.wx$Power.avg, type = "l", col = "blue", xlab = "Period", ylab = "Wavelet Power",
+       main = "Wavelet Power Averaged over Scales", lwd = 2)
+  
+  # Add p-value points
+  significant <- my.wx$Power.avg.pval < 0.05
+  points(my.wx$Period[significant], my.wx$Power.avg[significant], col = "green", pch = 19, cex=0.05)
+  points(my.wx$Period[!significant], my.wx$Power.avg[!significant], col = "red", pch = 19, cex=0.05)
+  
+  for (i in 2:length(city_name)){
+    my.wy <- analyze.wavelet(new_data_all, city_name[i], loess.span = 0, dt = 1, dj = 1/250, lowerPeriod = 16, upperPeriod = 256,
+                             make.pval = TRUE, n.sim = 15)
+    lines(my.wy$Period, my.wy$Power.avg, col = colors[i], lwd = 2)
+    
+    # Add p-value points
+    significant <- my.wy$Power.avg.pval < 0.05
+    points(my.wy$Period[significant], my.wy$Power.avg[significant], col = "green", pch = 19, cex = 0.05)
+    points(my.wy$Period[!significant], my.wy$Power.avg[!significant], col = "red", pch = 19, cex = 0.05)
+  }
+  
+  # Add the legend outside the plot area
+  par(xpd=TRUE)
+  legend("topleft", inset = c(0.0, 0), legend = city_name[1:length(city_name)], 
+         lty = 1, lwd = 2, col = colors[1:length(city_name)], cex = 0.7)
+  
+  dev.off()
+}
+
+plot_periods_pvalue ()
+
+```
+
+
+Computing Peaks relative to the Periods
+```{r}
+compute_peaks<- function(){
+  peaks_list <- list()  # Create an empty list to store peaks data for each city
+
+  # Loop through cities
+  for (i in 1:length(city_name)){
+    my.wx <- analyze.wavelet(new_data_all, city_name[i], loess.span = 0, dt = 1, dj = 1/250,
+                             lowerPeriod = 16, upperPeriod = 256, make.pval = TRUE, n.sim = 10)
+    
+    # Find peaks for Power.avg
+    
+    peaks <- findpeaks(my.wx$Power.avg, threshold = 0)  # You may adjust the threshold as needed
+    #print(peaks[,2]) 
+    #print(my.wx$Period[peaks[,2]]) 
+    peaks_list[[city_name[i]]] <- my.wx$Period[peaks[,2]]
+    #print(peaks[,2]) 
+  }
+  return(peaks_list)}
+
+peaks_list=compute_peaks()
+
+lis=c(15,25,35, 45,55,65,75,85,95, 105, 115, 125, 175, 255)
+peaks_list
+```
+
+Peaks between cities in same periodicity 
+```{r}
+# Function to fill the result data frame
+fill_peaks <- function(peaks) {
+  bin_edges<-c(10,25, 40,50,60,70,80,90, 120, 170, 255)
+  result <- data.frame(
+  City = names(peaks),
+  stringsAsFactors = FALSE)
+  for (i in seq_along(peaks)) {
+    city <- names(peaks)[i]
+    peak_values <- peaks[[i]]
+    
+    for (j in seq_along(peak_values)) {
+      peak <- peak_values[j]
+      bin_index <- findInterval(peak, bin_edges)
+      
+      # Create the column if it does not exist
+      col_name <- as.character(bin_index)
+      if (!col_name %in% colnames(result)) {
+        result[[col_name]] <- NA
+      }
+      
+     result[i, col_name] <- peak
+    }
+  }
+ return(result) }
+
+# Fill the result data frame
+result <- fill_peaks(peaks_list)
+
+# Order columns to ensure they are in the correct sequence
+result <- result[, c("City", sort(as.numeric(setdiff(colnames(result), "City"))))]
+
+# Print the result
+print(result)
+```
+
+We compute the mean for column to have mean by similar periods
+```{r}
+means <- colMeans(result[,-1], na.rm = TRUE)
+
+# Print the means
+means
+```
+Need to analyze periods where both cities are present. Filtering for cities that have the same periodicity 
+```{r}
+
+#cities_1= result[!is.na(result$`7`), ]$City #HARDCODED
+#cities_2= result[!is.na(result$`3`), ]$City
+cities_3= result[!is.na(result$`9`), ]$City
+#per1 = means['7'] 
+#per2 = means['3']
+per3= means['9']
+
+
+cities_3
+```
+Cross-Wavelet Power Spectrum --> determining correlation between both cities
+```{r}
+#specifying path for exporting plot
+folder_path <- "C:/Users/teehe/Downloads/WW_data_points/Modesto/oceanside"
+#folder_path <- "C:/Users/teehe/Downloads/WW_data_points/Modesto/oceanside/b3"
+file_name_co <- str_c(city_name[2], "_coherence_wavelet.tif")
+file_path_co <- file.path(folder_path, file_name_co)
+
+# Computes coherence between two cities using wavelet analysis
+compute_coherence <- function(Plant1, Plant2){
+  new_data_all$date = as.Date(new_data_all$date)
+  my.wc <- analyze.coherency(new_data_all, my.pair = c(Plant1, Plant2),
+                           loess.span = 0,
+                           dt = 1, dj = 1/100, lowerPeriod=10 , upperPeriod = 250,
+                           make.pval = TRUE, n.sim = 10) #merced vs sunnyvale & silicon valley: 100 sims
+
+  #wc.image(my.wc, n.levels = 250, 
+   #        legend.params = list(lab = "cross-wavelet power levels"),
+    #       periodlab = "period (days)", 
+     #      show.date = TRUE, 
+      #     date.format = "%Y-%m-%d", main = paste(Plant1, ' vs. ', Plant2))
+  
+  labels <- new_data_all$date
+  labels <- seq(as.Date(new_data_all$date[1], "%Y-%m-%d"), 
+                as.Date(new_data_all$date[length(new_data_all$date)], "%Y-%m-%d"), by = "day")
+  ticks <- seq(as.POSIXct(new_data_all$date[1], format = "%Y-%m-%d"),
+                  as.POSIXct(new_data_all$date[length(new_data_all$date)], format =  "%Y-%m-%d"), by = "month")
+  
+  
+  tiff(filename = file_path_co, width = 17, height = 13, units = "cm", res = 600)
+
+  wc.image(my.wc, n.levels = 250, 
+           legend.params = list(lab = "cross-wavelet power levels"),
+           periodlab = "period (days)", 
+           show.date = TRUE, 
+           date.format = "%Y-%m-%d", 
+           spec.time.axis = list(at = ticks, labels = labels, las = 2),
+           #timelab = "", 
+           main = paste(Plant1, ' vs. ', Plant2)
+           )
+  dev.off()
+  
+  # Uncomment below to visualize wavelet coherence levels
+  #wc.image(my.wc, which.image = "wc", color.key = "interval", n.levels = 250,
+           #siglvl.contour = 0.1, siglvl.arrow = 0.05,
+          # legend.params = list(lab = "wavelet coherence levels",main = paste(Plant1, ' vs. ', Plant2)),
+         #  timelab = "", main = paste(Plant1, ' vs. ', Plant2))
+  return (my.wc)
+  
+}
+
+
+# Computes coherence for all pairwise combinations of cities in cities_k
+#compute_coherence_by_group <- function(cities_k){
+ # for ( i in  1:(length(cities_k)-1)){
+  #    for (j in (i + 1):length(cities_k)) {
+   #   
+    #    Plant1 <- cities_k[i]
+     #   Plant2 <- cities_k[j]
+      #  print(paste(Plant1, '', Plant2))
+       # compute_coherence(Plant1, Plant2)
+#      }
+ #   }
+  #}
+
+#print(paste(Plant1, '', Plant2))
+compute_coherence(Plant1, Plant2)
+
+
+#red dominant graph is default smoothing settings --> wavelet coherence levels
+#other graph has window length of 101 (even number will be increased by 1) and produces more blurring for lower periods (higher frequencies) 
+```
+
+Comparing cities across different frequencies
+```{r}
+
+# Function to compute phase difference between two cities for a specific period
+
+compute_phase_diff <- function(Plant1, Plant2, per){
+    my.wc <- analyze.coherency(new_data_all, my.pair = c(Plant1, Plant2),
+                           loess.span = 0,
+                           dt = 1, dj = 1/100, lowerPeriod=10 , upperPeriod = 250,
+                           make.pval = TRUE, n.sim = 15)
+    at.ticks <- seq(from = -pi, to = pi, by = pi/4) 
+    label.ticks <- round((at.ticks/pi)*(per/2), 2) 
+    # Compute phases for the selected period
+    
+  #specifying path for exporting plot
+    
+  folder_path <- "C:/Users/teehe/Downloads/WW_data_points/Modesto/oceanside"
+  #folder_path <- "C:/Users/teehe/Downloads/WW_data_points/Modesto/oceanside/b3"
+  file_name_pd <- str_c("Period", per, "_", Plant2, "_phasediff.tif")
+  file_path_pd <- file.path(folder_path, file_name_pd)
+
+    tiff(filename = file_path_pd, 
+         width = 17.1, height = 11.5, units = "cm", res = 600)
+
+     phases<-wc.sel.phases(my.wc, sel.period = per, only.sig = TRUE,
+                which.sig = "wt",
+                siglvl = 0.05,
+                phaselim = c(-pi,+pi),
+                phaselab = "phases (days)",
+                spec.phase.axis = list(at = at.ticks, labels = label.ticks),
+                legend.coords = "topright", legend.horiz = FALSE,
+                main = paste(Plant1, ' vs. ', Plant2), sub = "", timelab = "")
+     
+     dev.off()
+     
+    phase_diff=phases$Phase.x-phases$Phase.y
+    days_lead <- phase_diff / (2 * pi) * per
+  #days_lead 
+  #plot(days_lead )
+  
+    trimmed_days_lead <- mean(days_lead, trim = 0.1)
+    #if (trimmed_days_lead < 0) {
+    #  print(paste(city2, 'leads by', abs(trimmed_days_lead), 'days in the period ', per))
+    #} else {
+    #  print(paste(city1, 'leads by', trimmed_days_lead, 'days in the period ', per))
+    #}
+    return(trimmed_days_lead)
+}
+
+
+# Function to compute phase differences for all pairs of cities in a group
+compute_phase_diff_by_group<-function(cities_k, perk){
+        results_df <- data.frame(Plant1 = character(), Plant2 = character(), days_lead = numeric(), stringsAsFactors = FALSE)
+      
+      for (i in 1:(length(cities_k) - 1)) {
+          for (j in (i + 1):length(cities_k)) {
+              Plant1_ <- cities_k[i]
+              Plant2_ <- cities_k[j]
+              days_lead <- compute_phase_diff(Plant1_, Plant2_, perk)
+              
+              # Add the result to the dataframe
+              results_df <- rbind(results_df, data.frame(Plant1 = Plant1_, Plant2 = Plant2_, days_lead = days_lead))
+          }
+      }
+      
+      # Display the results
+      return(results_df)
+      }
+
+
+```
+
+Differences between wastewater signals in the period `r per1`
+
+```{r}
+df_phases1=compute_phase_diff_by_group(cities_1, per1)
+  #bin_edges<-c(10,25, 40,50,60,70,80,90, 120, 170, 255)
+print(df_phases1)
+```
+
+Differences between wastewater signals in the period `r per3`
+```{r}
+df_phases3=compute_phase_diff_by_group(cities_3, per3)
+  #bin_edges<-c(10,25, 40,50,60,70,80,90, 120, 170, 255)
+print(df_phases3)
+
+```
+
+Differences between wastewater signals in the period `r per2`
+```{r}
+df_phases2=compute_phase_diff_by_group(cities_2, per2)
+  #bin_edges<-c(10,25, 40,50,60,70,80,90, 120, 170, 255)
+print(df_phases2)
+
+```
+
+```{r}
+ merced_days_leading <- full_join(df_phases1, df_phases3, by = c("Plant1", "Plant2")) %>%
+    select(Plant1, Plant2, days_lead_per1 = days_lead.x, days_lead_per_3 = days_lead.y) 
+
+colnames(merced_days_leading)[1] <- "Central Valley Plant"
+colnames(merced_days_leading)[2] <- "Bay Area Plant"
+colnames(merced_days_leading)[3] <- str_c("Days Lead (Per ", round(per1), ")")
+colnames(merced_days_leading)[4] <- str_c("Days Lead (Per ", round(per3), ")")
+
+ 
+print(merced_days_leading)
+
+```
+
+```{r}
+library(gt)
+
+  lag_table <- gt(merced_days_leading) %>% #creating table
+    cols_align(
+    align = "center"
+    ) %>%
+    tab_style(
+      style = list(
+        cell_fill("#ECECEC") # fill in color for column
+      ),
+      locations = cells_body(columns = c(!!sym("Bay Area Plant"), !!sym(str_c("Days Lead (Per ", round(per3), ")"))))  
+    ) %>%
+    tab_style(
+      style = cell_borders(sides = c("all"), #creating borders for each cell
+                           color = "#000000", style = "solid", weight = px(1)),
+      locations = cells_body(
+        columns = everything() # creating column/row borders for all columns
+      )
+    ) %>%
+    tab_style(
+      style = cell_text(align = "center"), # center aligning columns names
+      locations = cells_column_labels(columns = everything())
+    ) %>%
+    tab_style(
+      style = list(cell_text(color = "#000000")), # applying black font to all columns
+      locations = cells_body(columns = everything())
+    ) %>%
+    tab_header(title = md("Quantified Time Lags")) #creating table header
+  
+gtsave(data = lag_table, filename = str_c("time_lag_", Plant2, "_table.png"), 
+       path = "Modesto/oceanside") #/Section1_break
+  #NOTE: would need to convert to TIFF externally
+  
+  
+lag_table
+
+
+#can add a footnote if needed
+
+
+```
+
+
+Selecting Wavelet Dates for Per1
+```{r}
+per1 = round(as.numeric(per1)) #rounding period value to whole number 
+
+per1_data = new_data_all[seq(per1, nrow(new_data_all), per1), ]
+per1_data$Period = per1 #period is in number of days 
+per1_data
+
+
+```
+
+
+Selecting Wavelet Dates for per2
+```{r}
+per2 = round(as.numeric(per2)) #rounding period value to whole number 
+
+per2_data = new_data_all[seq(per2, nrow(new_data_all), per2), ]
+per2_data$Period = per2
+per2_data
+
+```
+
+Selecting Wavelet Dates for per3
+```{r}
+per3 = round(as.numeric(per3)) #rounding period value to whole number 
+
+per3_data = new_data_all[seq(per3, nrow(new_data_all), per3), ]
+per3_data$Period = per3
+per3_data
+
+
+```
+
+Combining Wavelet Periods into same Dataframe
+```{r}
+per_combined = rbind( per3_data) #, per2_data, per3_data )
+per_combined
+```
+
+
+
+Plotting the Periods 
+```{r}
+#grey blocks
+dates <- data.frame(
+  start = as.Date(c("2023-02-17")),
+  end = as.Date(c( "2023-10-30"))
+)
+
+p3 = p2 +
+  geom_vline(data = per_combined, aes(xintercept = date, linetype = Period))+
+  scale_linetype_binned()+ 
+  theme(legend.position = "bottom")#,
+        #legend.justification = "right") #+
+#annotate("rect", xmin = dates$start, xmax = dates$end, ymin = -Inf, ymax = Inf,
+           #fill = "gray", alpha = 0.5)
+
+
+
+ggsave(filename = str_c("plotting_Period", per3, "_", Plant2, ".tif"), 
+                          path = "Modesto/oceanside",device = "tiff", #/Section1_break
+                          width = 11.5, height = 9.7, units = "cm", dpi = 600)
+
+p3
+```

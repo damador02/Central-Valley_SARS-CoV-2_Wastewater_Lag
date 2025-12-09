@@ -1,0 +1,589 @@
+---
+title: "ww_data_peak_analysis"
+author: "De'Liz Amador"
+date: "2025-03-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, libraries}
+#install.packages("readxl") #to install package, name needs quotation
+library(readxl) #to read xlsx files
+library(tidyverse) #to use filtering functions (anything with a pipe)
+library(zoo)      # ordered observations which includes irregular time series.
+library(fANCOVA) # Contains the loess.as function
+library(dplyr)
+```
+
+#reading in data
+```{r}
+wwdata <- read.csv("master-covid-public.csv")
+#wwdata <- read.csv("2742b824-3736-4292-90a9-7fad98e94c06.csv") #most recent file from CDPH
+wwdata$pcr_target_avg_conc = as.numeric(wwdata$pcr_target_avg_conc)
+
+missing_data <- read.csv("data_CV_scan_eur2.csv") #calls label names for facilities 
+#data_CV_scan_eur.csv calls for label names
+
+```
+
+#Gathering a List of Facilities
+```{r, label names}
+#WWScan original 6 bay facilities
+bay_area_facilities = c("SFPUC Oceanside", "Silicon Valley", "Sunnyvale Santa Clara", "San Jose Santa Clara", "SFPUC Southeast", "Palo Alto All WWTP")
+
+bay_area = wwdata %>% #pipe command to apply function
+  filter(facility_name %in% bay_area_facilities)%>% #filter function aka pipe
+  select(c(facility_name, label_name))
+
+#getting rid of duplicates
+bay_area <- bay_area %>% 
+  dplyr::group_by(facility_name, label_name) %>% 
+  dplyr::filter(dplyr::row_number() == 1) %>%
+  dplyr::ungroup()
+
+
+#Gathering List of Central Valley Facilities
+
+central_valley_plants = c("LosBanos_WWTP", "Merced_Cty", "Modesto_Cty")
+
+central_valley = wwdata %>% #pipe command to apply function
+  filter(facility_name %in% central_valley_plants)%>% #filter function aka pipe
+  select(c(facility_name, label_name))
+
+central_valley <- central_valley %>% 
+  dplyr::group_by(facility_name, label_name) %>% 
+  dplyr::filter(dplyr::row_number() == 1) %>%
+  dplyr::ungroup()
+
+#combing both bay area and central valley list into same data frame
+combined_facilities = rbind(bay_area, central_valley)
+
+
+combined_facilities
+
+```
+
+```{r}
+#for central valley only data set
+unique(missing_data$Plant)
+
+```
+
+Normalizing data (automated)
+```{r}
+#filtering data
+filtered_data <- wwdata %>%
+  mutate(sample_collect_date = as.Date(sample_collect_date, "%m/%d/%Y")) %>%
+  
+  # Inner join to ensure we only get facilities listed in combined_facilities
+  inner_join(combined_facilities, by = "facility_name") %>%
+  # Filter the required conditions
+  filter(lab_id == "VLT",
+         pcr_gene_target == "N",
+         sample_collect_date <= as.Date("2023-10-31")) %>%
+  # Select the relevant columns
+  select(sample_collect_date, facility_name, 
+         pcr_target_avg_conc, hum_frac_mic_conc)
+
+
+# Add SC2_Norm column to DataFrame A
+filtered_data <- filtered_data %>%
+  mutate(SC2_Norm = pcr_target_avg_conc / hum_frac_mic_conc)
+
+# creating new dataframe including normalized data
+norm_wwdata <- filtered_data %>%
+  select(sample_collect_date, facility_name, SC2_Norm) %>%
+  rename(Date = sample_collect_date)
+
+
+```
+
+Getting data for missing dates
+```{r}
+library(dplyr)
+library(lubridate) #for working with filtering for dates
+
+# Step 1: Identify the plants in Central Valley
+central_valley_plants <- central_valley %>%
+  select(facility_name) %>%
+  pull(facility_name)
+
+# Step 2: Create a function to get the minimum date for each plant in dataframe_B
+get_min_date_per_plant <- function(df) {
+  df %>%
+    group_by(facility_name) %>%
+    summarize(min_date = min(Date)) %>%
+    ungroup()
+}
+
+# Get the minimum dates for each plant in dataframe_B
+min_dates <- get_min_date_per_plant(norm_wwdata)
+colnames(missing_data)[3] <- "facility_name"
+
+# Step 3: Filter data_CV_scan_eur2 for missing data before the minimum date for each plant
+filtered_missing_data <- missing_data %>%
+  mutate(Date = as.Date(Date, "%m/%d/%Y")) %>%
+  filter(facility_name %in% central_valley_plants) %>%
+  left_join(min_dates, by = "facility_name") %>%
+  filter(is.na(min_date) | Date < min_date) %>% # Include rows where min_date is NA or Date is less than min_date
+  select(Date, facility_name, SC2_Norm)
+
+# Step 4: Handle Merced & Modesto data separately
+merced_missing_wwdata <- missing_data %>%
+  mutate(Date = as.Date(Date, "%m/%d/%Y")) %>%
+  filter(facility_name == "Merced_Cty",
+         Date >= as.Date("2022-04-30") 
+         & Date <= as.Date("2022-12-02")) %>%
+  select(Date, facility_name, SC2_Norm) # Select only necessary columns
+
+mod_missing_wwdata <- missing_data %>%
+  mutate(Date = as.Date(Date, "%m/%d/%Y")) %>%
+  filter(facility_name == "Modesto_Cty",
+         Date >= as.Date("2022-04-30") 
+         & Date <= as.Date("2022-12-05")) %>%
+  select(Date, facility_name, SC2_Norm) # Select only necessary columns
+
+# Combine the filtered missing data with the specific Merced_Cty data
+missing_data_combined <- bind_rows(list(filtered_missing_data, merced_missing_wwdata, mod_missing_wwdata))
+
+# Step 5: Append the missing data 
+norm_wwdata <- norm_wwdata %>%
+  bind_rows(missing_data_combined) %>%
+  distinct() %>% # Remove any duplicates
+  arrange(facility_name, Date) # Ensure data is sorted by Date
+
+```
+
+Averaged Data Across all WWTPs
+```{r}
+# Add new rows with averaged data for Central Valley and Bay Area
+# Central Valley Avg
+central_valley_facilities <- central_valley %>% select(facility_name)
+central_valley_data <- norm_wwdata %>%
+  inner_join(central_valley_facilities, by = "facility_name") %>%
+  group_by(Date) %>%
+  summarize(SC2_Norm = mean(SC2_Norm, na.rm = TRUE), .groups = "drop") %>%
+  mutate(facility_name = "Central Valley Average")
+
+# Bay Area Avg
+bay_area_facilities <- bay_area %>% select(facility_name)
+bay_area_data <- norm_wwdata %>%
+  inner_join(bay_area_facilities, by = "facility_name") %>%
+  group_by(Date) %>%
+  summarize(SC2_Norm = mean(SC2_Norm, na.rm = TRUE), .groups = "drop") %>%
+  mutate(facility_name = "Bay Area Average")
+
+# Combine all data
+norm_wwdata <- bind_rows(norm_wwdata, central_valley_data, bay_area_data)
+colnames(norm_wwdata)[2] <- "Plant"
+
+norm_wwdata <- norm_wwdata[-3681,] #filtering out data point for Southeast SF (monitoring began in May 2022)
+
+# Print or return the resulting DataFrame B
+print(norm_wwdata)
+```
+
+
+Changing WWTP names
+```{r}
+norm_wwdata$Plant[norm_wwdata$Plant == "LosBanos_WWTP"] <- 'Los Banos'
+norm_wwdata$Plant[norm_wwdata$Plant == "Merced_Cty"] <- "Merced"
+norm_wwdata$Plant[norm_wwdata$Plant == "Modesto_Cty"] <- "Modesto"
+norm_wwdata$Plant[norm_wwdata$Plant == "San Jose Santa Clara"] <- 'San Jose'
+norm_wwdata$Plant[norm_wwdata$Plant == "Sunnyvale Santa Clara"] <- "Sunnyvale"
+norm_wwdata$Plant[norm_wwdata$Plant == "Palo Alto All WWTP"] <- "Palo Alto"
+norm_wwdata$Plant[norm_wwdata$Plant == "SFPUC Oceanside"] <- "Oceanside"
+norm_wwdata$Plant[norm_wwdata$Plant == "SFPUC Southeast"] <- 'Southeast SF'
+
+
+print(unique(norm_wwdata$Plant))
+```
+
+
+Paired Analysis: Filtering data to only keep the same dates
+```{r}
+
+plant1_cv = "Modesto"
+plant2_ba = "Oceanside"
+
+filtered_data <- norm_wwdata %>%
+  filter(Plant %in% c(plant1_cv, plant2_ba))
+
+
+# Step 1: Identify common dates across the two plants
+common_dates <- filtered_data %>%
+  group_by(Date) %>%
+  filter(n_distinct(Plant) == 2) %>%  # Ensure both plants are present
+  ungroup() %>%
+  select(Date) %>%
+  distinct()
+  
+
+# Step 2: Filter the data to keep only the common dates
+common_wwdata <- filtered_data %>%
+  filter(Date %in% common_dates$Date)
+  
+
+# Check the filtered data
+common_wwdata
+
+
+```
+
+```{r}
+#assigning normalized data to variable
+var = "SC2_Norm"
+
+trim_fun = function(x){
+  # function to calculate trimmed average by removing the minimum and maximum
+  x = x[!is.na(x)]   # remove NA
+  if(length(x) <= 2){ # At least two observation to compute the average
+    return(NA)
+  }else{
+    x1 = sort(x)
+    x1 = x1[2:(length(x1)-1)] # Remove max and min values
+    return(mean(x1))
+  }
+}
+```
+
+Results below the limit of detection (reported as 0) are replaced by half the observed minimum in each plant.
+```{r echo=T, warning=FALSE, message=FALSE}
+# replace 0 (below LOD or ND) by min/deno
+replace_min = function(x){
+  deno = 4
+  x[x == 0] = min(x[x>0],na.rm=T)/deno
+  return(x)
+}
+```
+
+Computing loess-smoothed wastewater signal
+```{r}
+loessclean = function(common_wwdata, Plant_selected, span = 14, plot_result=F,plot_log=F) {
+  "Function to  compute the Loess-smoothed wastewater signal.
+  https://cran.r-project.org/web/packages/fANCOVA/fANCOVA.pdf
+  
+  Arguments
+  data         Data set,
+  Plant        Plant to be analized.
+  span        smoothing parameter	which controls the degree of smoothing (Number of data to use)
+  plot_result if TRUE or T, the fitted curve or surface will be generated.
+  plot_log    if TRUE or T, The graph is shown on a logarithmic scale.
+  
+  "
+  # Filter the Plant of interest
+  data = common_wwdata %>% filter(Plant == Plant_selected) %>% mutate(Date=as.Date(Date)) %>%
+    select(all_of(c("Date",var)))%>%   # Select variables of interest
+    rename("Gene" = var) %>%
+    mutate(Gene = ifelse(Gene %in% c(NA,NaN,Inf,-Inf),NA,Gene),
+           Gene = replace_min(Gene), # replace 0 (below LOD or ND) by min/2 
+           Gene_10 = rollapply(Gene,width=10, trim_fun, align="center", fill=NA) #10 day moving average
+           )
+  
+  #finding 95th percentile
+  q_high <-quantile(data$Gene, 0.95, na.rm = TRUE)
+  #removing outliers/extremely high values
+  data <- data %>% mutate(gene_filtered = as.numeric(ifelse(Gene > q_high, NA, Gene)))
+    #filter(Gene <= q_high)
+  
+     #calculating 95th percentiles (code from Chris)
+  ##leg_text = quantile(dat_pred$yhat, probs = 0.95,na.rm = T)
+  #mutating data to set values above 95th percentile to NA
+  ##dat_pred = dat_pred %>% mutate(yhat_filtered = as.numeric(ifelse(yhat > leg_text, NA, yhat)))
+  
+  
+  # Fill gaps in dates
+  x_lim <- range(data$Date,na.rm = T)        # Period with observations
+  x_grid <- seq(x_lim[1], x_lim[2],by="day") # Day-by-day date sequence
+  site_dates = data.frame(Date = x_grid) # Dates with no gaps
+  
+  # Merge two data frames by common columns (by) to have
+  dat_pred = merge(site_dates,data,by="Date",all.x=T)
+  #Create a numeric vector from dates (Date variable)
+  dat_pred$x = as.numeric(dat_pred$Date) # Used in loess regression
+  
+  
+  # For Loess regression analysis it must not have NA
+  dat_train = dat_pred %>% drop_na(gene_filtered) # remove NA's in Gene variable
+  
+
+  if(span==0){ # Find automaticlly span parameter
+    loess_span = loess(log10(gene_filtered) ~ x, dat_train, degree = 2, family = "symmetric")
+    #print(loess_span)
+  }else{
+    len_data = dim(dat_train)[1] # Total ob observations
+    span = span/len_data        # Span represent the number of data to use in each point
+    # log10 transformation to produce a reasonably symmetric distribution
+    loess_span = loess(log10(gene_filtered) ~ x, dat_train, degree = 2, span = span,
+                         family = "symmetric")
+    #print(loess_span)
+  }
+  # Predicted values in all the dates: dat_pred have complete dates
+  loe_f_p = predict(loess_span,dat_pred,se = TRUE) # for predictions
+  yhat = loe_f_p$fit      # Mean
+  se.fit = loe_f_p$se.fit # Standard deviation
+  
+  # Confidence intervals (CI): k standard deviation
+  k = 3                   # +- k standar deviation from the mean
+  LCI = yhat - k*se.fit # Lower confident interval
+  UCI = yhat + k*se.fit # Uper confident interval
+  
+  # Return to the original scale (inverse of log10)
+  dat_pred$yhat = 10**yhat 
+  dat_pred$LCI = 10**LCI 
+  dat_pred$UCI = 10**UCI
+
+  
+  if(plot_result){
+    size = 0.8
+    p = ggplot(dat_pred,aes(x=Date))+
+      geom_ribbon(aes(ymin = LCI,
+                      ymax =UCI,fill="Error bar"), alpha=0.4) +
+      geom_point(aes(y=gene_filtered,shape="Observation"),size=.6)+
+      geom_line(aes(y=Gene_10,color="10 days trimmed average"))+ 
+      geom_line(aes(y=yhat,color="Loess"))+#,linewidth=size
+      #geom_point(aes(y = yhat),color="red",size=2,shape=18)+ #highlighting outliers
+      #scale_y_continuous(expand=c(0,0),limits = c(0,leg_text))+ #y-axis limit
+      labs(title=sprintf("Plant of %s",Plant_selected))+
+      xlab("Collection date")+
+      ylab("Normalized concentration")+
+      theme(legend.position='bottom')+
+      theme(legend.title=element_blank())
+    
+    ggsave(filename = str_c(Plant_selected, ".tiff"), device = "tiff",
+                          path = "Modesto/oceanside", # path = select folder you want to save the plots in; HARDCODED
+                          width = 17.1, units = "cm", dpi = 800)
+    
+    # If log scale is selected
+    if(plot_log){
+      p = p+scale_y_continuous(trans='log10') 
+    }
+    print(p)
+  }else return(dat_pred)
+  
+}
+  
+```
+
+Smoothed data plot.
+```{r echo=T, warning=FALSE, message=FALSE}
+#central valley plot
+loessclean(common_wwdata,Plant_selected = "Modesto",span = 28,plot_result=T,plot_log=F)
+#bay area plot
+loessclean(common_wwdata,Plant_selected = "Oceanside",span = 28, plot_result=T,plot_log=F) 
+
+```
+
+Saving the data without graphing it. Note that plot_result=F and plot_log=F are by the fault in the loessclean function.
+```{r echo=T, warning=FALSE, message=FALSE}
+city_name = c("Modesto", "Oceanside")
+data_merced = loessclean(common_wwdata,Plant_selected ="Modesto",span = 28)
+data_merced$Plant = city_name[1]
+data_oceanside = loessclean(common_wwdata,Plant_selected="Oceanside",span = 28)
+data_oceanside$Plant = city_name[2]
+
+#removing duplicates
+data_oceanside <- data_oceanside %>% 
+  dplyr::group_by(Date, Plant) %>% 
+  dplyr::filter(dplyr::row_number() == 1) %>%
+  dplyr::ungroup()
+
+data_merced <- data_merced %>% 
+  dplyr::group_by(Date, Plant) %>% 
+  dplyr::filter(dplyr::row_number() == 1) %>%
+  dplyr::ungroup()
+
+#combining loess results into one data frame
+data_all = rbind(data_merced,data_oceanside)
+
+```
+
+```{r echo=T, warning=FALSE, message=FALSE}
+# Correlation analysis
+Plant1 = "Modesto"
+Plant2 = "Oceanside"
+dat1 = data_all %>% filter(Plant == Plant1)
+dat2 = data_all %>% filter(Plant == Plant2) 
+dat = merge(dat1,dat2,by="Date")
+
+# Select the variable of interest
+# Loess estimation
+X1 = dat%>% pull(yhat.x) # .x is the first merged data, yhat = mean
+X2 = dat%>% pull(yhat.y) # .y is the second merged data
+
+#pearson correlation
+cor_xy = cor(X1,X2,method = "pearson",use="complete.obs")
+
+# 10 days trimmed average
+X1ma = dat%>% pull(Gene_10.x) # .x is the first merged data
+X2ma = dat%>% pull(Gene_10.y) # .y is the second merged data
+cor_xya = cor(X1ma,X2ma,method = "pearson",use="complete.obs")
+
+print(sprintf("Correlation loess: %s", round(cor_xy, 2)))
+print(sprintf("Correlation 10 days trimed average: %s", round(cor_xya, 2)))
+
+```
+
+Plotting
+```{r echo=T, warning=FALSE, message=FALSE}
+# Filter the two cities and plot
+data_plot = data_all %>% filter(Plant %in%c(Plant1,Plant2))
+
+##code received from Chris to manually change the y-axis--> seen in loess function above
+#leg_text = quantile(data_plot[new], probs = 0.95,na.rm = T)
+#scale_y_continuous(expand=c(0,0),limits = c(0,leg_text))
+#data_plot = data_plot %>% mutate(new = as.numeric(ifelse(.data[[new]] > leg_text, leg_text, NA)))
+#geom_point(aes(y = new),color="red",size=2,shape=18)
+##
+
+p2 = ggplot(data_plot,aes(x=Date))+
+  geom_line(aes(y=yhat,color=Plant),
+            linewidth = 0.75)+
+  xlab("Collection date")+
+  ylab("Normalized concentration")+
+  theme(legend.position='bottom')
+
+p2
+```
+
+Identifying Peak Concentrations in different waves
+```{r, identifying peaks}
+library(dplyr)
+library(zoo) # for rollapply
+library(rlang) # for sym function
+
+# Function to find peak values
+find_peaks <- function(data_all, plant_column = "Plant", date_column = "Date", value_column = "yhat", window_size = 10) {
+  data_all %>%
+    group_by_at(plant_column) %>%
+    mutate(is_peak = (get(value_column) == rollapply(get(value_column), width = window_size, FUN = max, 
+                                                     align = "center", fill = NA, partial = TRUE))) %>%
+    filter(is_peak) %>%
+    select(!!sym(plant_column), !!sym(date_column), !!sym(value_column)) %>%
+    distinct(!!sym(plant_column), !!sym(date_column), .keep_all = TRUE) %>% #ensure each date is once per plant
+    arrange(!!sym(plant_column), !!sym(date_column)) %>%
+    ungroup()
+}
+
+# Function to count the number of peaks for a given window size
+count_peaks <- function(data_all, window_size) {
+  peaks <- find_peaks(data_all, plant_column = "Plant", date_column = "Date", value_column = "yhat", window_size = window_size)
+  nrow(peaks)
+}
+
+# Initialize variables
+target_peaks = 12 #HARDCODED; Total number of rows in table (counted the number of waves between both cities)
+best_window_size = NULL
+closest_peak_count = Inf
+
+# Try different window sizes
+for (window_size in seq(5, 200, by = 1)) {
+  peak_count = count_peaks(data_all, window_size)
+  # cat("Window Size:", window_size, "- Number of Peaks:", peak_count, "\n")
+  
+  if (abs(peak_count - target_peaks) < closest_peak_count) {
+    closest_peak_count = abs(peak_count - target_peaks)
+    best_window_size = window_size
+  }
+}
+# cat("Best Window Size:", best_window_size, "\n")
+
+# Use the function on saved loess data
+peak_table <- find_peaks(data_all, plant_column = "Plant", date_column = "Date", value_column = "yhat", window_size = best_window_size)
+colnames(peak_table)[3] <- "Concentration"
+
+#removing false peaks
+peak_table = peak_table %>%  filter(!row_number() %in% c(1,9 ))
+
+```
+
+Plotting peaks
+```{r}
+#same correlation analysis (p2) graph as above
+p2 = ggplot(data_plot,aes(x=Date))+
+  geom_line(aes(y=yhat,color=Plant),
+            linewidth = 0.75)+
+  xlab("Collection date")+
+  ylab("Normalized concentration")+
+  theme(legend.position='bottom')
+
+#adding peaks to plot
+p2 = p2 +
+  geom_point(data = peak_table, aes(x = Date, y = Concentration, color = Plant),
+             size = 2.5, shape = 19)
+
+ggsave(filename = str_c(plant1_cv, "_",plant2_ba, "_peaks.tiff"), device = "tiff",
+                          path = "Modesto/oceanside",
+                           width = 11, height = 9.7,units = "cm", dpi = 800)
+
+p2
+```
+
+Putting Peaks in a Table
+```{r}
+library(gt)
+
+#creating a function to not hardcode city/plant names
+create_peak_date_table <- function(peak_table, plant1, plant2) {
+  plant1_data <- peak_table %>%
+    filter(Plant == plant1) %>%
+    select(Date) #only want dates for the table for comparison
+  
+  plant2_data <- peak_table %>%
+    filter(Plant == plant2) %>%
+    select(Date)
+  
+  peaks_date <- merge(data.frame(plant1_data, row.names = NULL), data.frame(plant2_data, row.names = NULL),
+                    by = 0, all = TRUE)[-1] #merging columns and assigning NA so that rows can match
+  colnames(peaks_date)[1] <- plant1 #assigning cities as column names
+  colnames(peaks_date)[2] <- plant2
+  peaks_date$Peaks <- 1:nrow(peaks_date) #counting the number of peaks there are
+  peaks_date <- peaks_date[, c(3, 2, 1)] #rearranging column order
+  
+  
+  peaks_table <- gt(peaks_date) %>% #creating table
+    cols_align(
+    align = "center",
+    columns = c(Peaks, !!sym(plant1), !!sym(plant2))
+    ) %>%
+    tab_style(
+      style = list(
+        cell_fill("#ECECEC") # fill in color for column
+      ),
+      locations = cells_body(columns = !!sym(plant2)) # column with color fill (center column)
+    ) %>%
+    tab_style(
+      style = cell_borders(sides = c("all"), #creating borders for each cell
+                           color = "#000000", style = "solid", weight = px(1)),
+      locations = cells_body(
+        columns = c(Peaks, !!sym(plant1), !!sym(plant2)) # creating column/row borders for all columns
+      )
+    ) %>%
+    tab_style(
+      style = cell_text(align = "center"), # center aligning columns names
+      locations = cells_column_labels(columns = c(Peaks, !!sym(plant1), !!sym(plant2)))
+    ) %>%
+    tab_style(
+      style = list(cell_text(color = "#000000")), # applying black font to all columns
+      locations = cells_body(columns = c(Peaks, !!sym(plant1), !!sym(plant2)))
+    ) %>%
+    tab_header(title = md("Dates for Identified Wave Peaks")) #creating table header
+  
+  gtsave(data = peaks_table, filename = str_c(plant2, "_peakstable.png"),
+         path = "Modesto/oceanside") #, width = 8.3, units = "cm", res = 600 )
+  #NOTE: would need to convert to TIFF externally
+  
+  
+  peaks_table
+
+}
+
+#can add a footnote if needed
+
+# Use the function
+create_peak_date_table(peak_table, "Modesto", "Oceanside")
+
+```
