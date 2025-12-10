@@ -28,7 +28,12 @@ California's county COVID-19 case data can be downloaded from the CalHHS website
 
 California's county COVID-19 hospitalization data can be downloaded from the California Open Data Portal: <https://data.ca.gov/dataset/covid-19-hospital-data-archived>
 
-More information about the COVID-19 variants can be found the on the U.S. Centers for Disease Control and Prevention (CDC) website: <https://www.cdc.gov/covid/php/variants/variants-and-genomic-surveillance.html>
+COVID-19 variants for the U.S. and speciifc U.S. regions can be downloaded on the U.S. Centers for Disease Control and Prevention (CDC) website:<https://data.cdc.gov/Laboratory-Surveillance/SARS-CoV-2-Variant-Proportions/jr58-6ysp/about_data>
+
+# Acknowledgements
+The analyses conducted through WastewaterSCAN was supported by gifts from the CDC Foundation and the Sergey Brin Family Foundation. Additional research support for Healthy Central Valley Together was provided through a philanthropic gift to the University of California, Davis.
+
+This work and research would not be possible without our WWTP (Merced, Modesto, and Los Banos) and public health partners (Merced County Department of Public Health, Stanislaus County Department of Public Health, Yolo County Department of Public Health, and California Department of Public Health). We alsothank the staff of our commercial lab partners.
 
 # Licensing
-
+This repository does not have official licensing yet (tbd). 
