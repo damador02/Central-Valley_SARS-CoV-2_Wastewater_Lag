@@ -3,10 +3,10 @@ Repository that holds code and example figures for "Urban to Rural Shifts: Quant
 
 Specifically, it includes the following:
 ### wastewater_analysis
-**1025_ww_data_peak_analysis.Rmd** | R Markdown file that shows how the raw SARS-CoV-2 wastewater data was smoothed using a local polynomial regression fitting (LOESS) and 10-day moving average. Smoothed LOESS data was then used to identify the peaks for corresponding wastewater waves. This script requires the [fANCOV package](https://cran.r-project.org/web/packages/fANCOVA/index.html).
+**1025_ww_data_peak_analysis.Rmd** | R Markdown file that shows how the raw SARS-CoV-2 wastewater data was smoothed using a local polynomial regression fitting (LOESS) and 10-day moving average. Smoothed LOESS data was then plotted and used to identify the peaks for corresponding wastewater waves. This script requires the [fANCOVA package](https://cran.r-project.org/web/packages/fANCOVA/index.html).
 
 
-data_creation_peak_analysis.R** | R script identical to **1025_ww_data_peak_analysis.RMD**. 
+**data_creation_peak_analysis.R** | R script identical to **1025_ww_data_peak_analysis.RMD**. 
 
 
 **0325_wavelet_analysis.Rmd** | R markdown files that quantifies that lag between the SARS-CoV-2 wastewater waves based on the 10-day smoothed moving average. Also calls **data_creation_peak_analysis.R**. This script requires the [WaveletComp package](https://cran.r-project.org/web/packages/WaveletComp/index.html).
@@ -22,7 +22,7 @@ More information about the difference between Lab 1 and Lab 2 can be found here:
 **clinical_cases_ccf.Rmd** | R Markdown file that quantifies the lag of COVID-19 case data between Central Valley and Bay Area counties using the cross correlation function (ccf).
 
 
-**covid_variants.Rmd** | R Markdown file that determines the dominant SARS-CoV-2 variant for Region 9 (including all of California)
+**covid_variants.Rmd** | R Markdown file that determines the dominant SARS-CoV-2 variant for Region 9 of the U.S. (including all of California)
 
 California's county COVID-19 case data can be downloaded from the CalHHS website: <https://data.chhs.ca.gov/dataset/covid-19-time-series-metrics-by-county-and-state/resource/046cdd2b-31e5-4d34-9ed3-b48cdbc4be7a>
 
