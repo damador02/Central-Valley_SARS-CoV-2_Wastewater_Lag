@@ -1,4 +1,4 @@
-# WW_data_points
+# Central-Valley_SARS-CoV-2_Wastewater_Lag
 Repository that holds code and example figures for "Urban to Rural Shifts: Quantifying the Time Lag of SARS-Cov-2 between the Bay Area and Central Valley of California through Wastewater-Based Epidemiology"
 
 Specifically, it includes the following:
