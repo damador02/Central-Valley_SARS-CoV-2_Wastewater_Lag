@@ -24,7 +24,7 @@ More information about the difference between Lab 1 and Lab 2 can be found here:
 
 **covid_variants.Rmd** | R Markdown file that determines the dominant SARS-CoV-2 variant for Region 9 of the U.S. (including all of California)
 
-California's county COVID-19 case data can be downloaded from the CalHHS website: <https://data.chhs.ca.gov/dataset/covid-19-time-series-metrics-by-county-and-state/resource/046cdd2b-31e5-4d34-9ed3-b48cdbc4be7a>
+  * California's county COVID-19 case data can be downloaded from the CalHHS website: <https://data.chhs.ca.gov/dataset/covid-19-time-series-metrics-by-county-and-state/resource/046cdd2b-31e5-4d34-9ed3-b48cdbc4be7a>
 
 California's county COVID-19 hospitalization data can be downloaded from the California Open Data Portal: <https://data.ca.gov/dataset/covid-19-hospital-data-archived>
 
