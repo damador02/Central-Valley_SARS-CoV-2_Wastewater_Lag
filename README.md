@@ -42,6 +42,8 @@ This folder contains some results (figures and tables) obtained from the analysi
 
 
 # Acknowledgements
+I would like to acknowledge Dr. Maria Daza-Torres and Dr. Jose Cricelio Montesinos-Lopez for their contirbution and effort in helping generate the code and resolving the numerous errors that occurred along the way.
+
 The analyses conducted through WastewaterSCAN was supported by gifts from the CDC Foundation and the Sergey Brin Family Foundation. Additional research support for Healthy Central Valley Together was provided through a philanthropic gift to the University of California, Davis.
 
 This work and research would not be possible without our WWTP (Merced, Modesto, and Los Banos) and public health partners (Merced County Department of Public Health, Stanislaus County Department of Public Health, Yolo County Department of Public Health, and California Department of Public Health). We alsothank the staff of our commercial lab partners.
