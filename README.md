@@ -12,11 +12,11 @@ Specifically, it includes the following:
 **0325_wavelet_analysis.Rmd** | R markdown files that quantifies that lag between the SARS-CoV-2 wastewater waves based on the 10-day smoothed moving average. Also calls **data_creation_peak_analysis.R**. This script requires the [WaveletComp package](https://cran.r-project.org/web/packages/WaveletComp/index.html).
 
 
-Data used for this project for "Lab 1" was dowloaded from the California Open Data Portal: <https://data.ca.gov/dataset/covid-19-wastewater-surveillance-data-california>
+  * Data used for this project for "Lab 1" was dowloaded from the California Open Data Portal: <https://data.ca.gov/dataset/covid-19-wastewater-surveillance-data-california>
 
-Up-to-date SARS-CoV-2 data can be downloaded from the California Department of Public Health (CDPH) dashboard: <https://skylab.cdph.ca.gov/calwws/>
+  * Up-to-date SARS-CoV-2 data can be downloaded from the California Department of Public Health (CDPH) dashboard: <https://skylab.cdph.ca.gov/calwws/>
 
-More information about the difference between Lab 1 and Lab 2 can be found here: <https://www.frontiersin.org/journals/public-health/articles/10.3389/fpubh.2023.1141097/full> 
+  * More information about the difference between Lab 1 and Lab 2 can be found here: <https://www.frontiersin.org/journals/public-health/articles/10.3389/fpubh.2023.1141097/full> 
 
 ### clinical_analysis
 **clinical_cases_ccf.Rmd** | R Markdown file that quantifies the lag of 7-day moving average COVID-19 case data between Central Valley and Bay Area counties using the cross correlation function (ccf). Calls for the **covid19cases_test.csv** data file.
@@ -26,9 +26,9 @@ More information about the difference between Lab 1 and Lab 2 can be found here:
 
   * California's county COVID-19 case data can be downloaded from the CalHHS website: <https://data.chhs.ca.gov/dataset/covid-19-time-series-metrics-by-county-and-state/resource/046cdd2b-31e5-4d34-9ed3-b48cdbc4be7a>
 
-California's county COVID-19 hospitalization data can be downloaded from the California Open Data Portal: <https://data.ca.gov/dataset/covid-19-hospital-data-archived>
+  * California's county COVID-19 hospitalization data can be downloaded from the California Open Data Portal: <https://data.ca.gov/dataset/covid-19-hospital-data-archived>
 
-COVID-19 variants for the U.S. and speciifc U.S. regions can be downloaded on the U.S. Centers for Disease Control and Prevention (CDC) website:<https://data.cdc.gov/Laboratory-Surveillance/SARS-CoV-2-Variant-Proportions/jr58-6ysp/about_data>
+  * COVID-19 variants for the U.S. and speciifc U.S. regions can be downloaded on the U.S. Centers for Disease Control and Prevention (CDC) website:<https://data.cdc.gov/Laboratory-Surveillance/SARS-CoV-2-Variant-Proportions/jr58-6ysp/about_data>
 
 
 ### example_results
