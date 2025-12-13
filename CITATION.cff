@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Amador"
+  given-names: "De'Liz"
+  orcid:
+- family-names: "Daza-Torres"
+  given-names: "Maria L."
+  orcid: "https://orcid.org/0000-0002-5234-1558"
+- family-names: "Montesinoz-Lopez"
+  given-names: "Jose Cricelio"
+  orcid: "https://orcid.org/0000-0001-5017-6192"
+title: "Central-Valley_SARS-CoV-2_Wastewater_Lag"
+version: 1.0.0
+doi: tbd
+date-released: 2025-12-12
+url: "https://github.com/damador02/Central-Valley_SARS-CoV-2_Wastewater_Lag"
