@@ -1,6 +1,8 @@
 # Central-Valley_SARS-CoV-2_Wastewater_Lag
 Repository that holds code and example figures for "Urban to Rural Shifts: Quantifying the Time Lag of SARS-Cov-2 between the Bay Area and Central Valley of California through Wastewater-Based Epidemiology"
 
+The goal of this project is to analyze the wastewater concentrations of SARS-CoV-2 for select Bay Area and Central Valley wastewater treatment plants in order to better understand the the spatial and temporal trends of disease transmission dynamics. This project also includes an analysis of clinical COVID-19 case data.
+
 Specifically, it includes the following:
 ### wastewater_analysis
 **1025_ww_data_peak_analysis.Rmd** | R Markdown file that shows how the raw SARS-CoV-2 wastewater data was smoothed using a local polynomial regression fitting (LOESS) and 10-day moving average. Smoothed LOESS data was then plotted and used to identify the peaks for corresponding wastewater waves. This script requires the [fANCOVA package](https://cran.r-project.org/web/packages/fANCOVA/index.html).
